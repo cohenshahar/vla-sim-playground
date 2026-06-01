@@ -82,12 +82,12 @@ def _detect_strategy(explicit: str = "auto") -> str:
 class OpenVLAInference:
     """Loads OpenVLA-7B once, exposes predict(image, instruction)."""
 
-    def __init__(self, cfg: Optional[Config] = None, strategy: str = "auto"):
+    def __init__(self, cfg: Optional[Config] = None, strategy: Optional[str] = None):
         self.cfg = cfg or CFG
         self.cfg.ensure_dirs()
         apply_determinism(self.cfg)
 
-        self.strategy = _detect_strategy(strategy or self.cfg.strategy)
+        self.strategy = _detect_strategy(self.cfg.strategy if strategy is None else strategy)
         if self.strategy == "unsupported":
             raise RuntimeError(
                 "This machine has neither a CUDA GPU nor enough RAM to load OpenVLA-7B. "

@@ -14,7 +14,7 @@ Per tick:
 This script supports three scenes out of the box:
 
     env_tag="fetch_reach"
-        Uses Gymnasium-Robotics FetchReach-v3 to get the MjModel/MjData.
+        Uses Gymnasium-Robotics FetchReach-v2 to get the MjModel/MjData.
         This is the recommended scene because the 7-DoF reach task is
         closest to OpenVLA's training distribution.
 
@@ -65,7 +65,7 @@ def _load_fetch_reach():
             "Run: pip install gymnasium-robotics==1.2.4"
         ) from e
 
-    env = gym.make("FetchReach-v3", render_mode="rgb_array")
+    env = gym.make("FetchReach-v2", render_mode="rgb_array")
     env.reset(seed=CFG.seed)
     # Gymnasium-Robotics wraps MuJoCo; reach into the underlying simulator.
     unwrapped = env.unwrapped
