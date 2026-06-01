@@ -1,56 +1,52 @@
-# LIBERO run sheet — real pick-and-place with OpenVLA
+# LIBERO run sheet — real pick-and-place with OpenVLA (4-bit, <16 GB GPU)
 
-Source of truth: the OpenVLA README (fetched 2026-06-01), section *"LIBERO Simulation
-Benchmark Evaluations"*. Commands below are copied from there — not invented.
+Source of truth: OpenVLA README + `experiments/robot/libero/run_libero_eval.py` +
+`experiments/robot/openvla_utils.py` (read from source 2026-06-01). Commands and flags
+below are taken from those files — not invented.
 
 ## What this gives you
-A Franka Panda (parallel-jaw gripper) in the LIBERO sim performing language-conditioned
-pick-and-place, driven by OpenVLA. Reported success ~84.7% on LIBERO-Spatial.
+A Franka Panda (parallel-jaw gripper) in LIBERO doing language-conditioned pick-and-place,
+driven by OpenVLA. Reported ~84.7% success on LIBERO-Spatial. The eval **auto-saves a
+replay video per episode** (`save_rollout_video`) — MP4s come for free.
 
-**Key fact:** this uses a checkpoint OpenVLA **already fine-tuned on LIBERO and
-published** (`openvla/openvla-7b-finetuned-libero-spatial`). The base `openvla-7b`
-does NOT do LIBERO well zero-shot. We do no fine-tuning ourselves — just download
-their checkpoint and run. This is unrelated to the KR6 / vacuum arm.
+**Key fact:** uses the checkpoint OpenVLA already **fine-tuned on LIBERO and published**
+(`openvla/openvla-7b-finetuned-libero-spatial`). The base `openvla-7b` is poor on LIBERO.
+We do NO fine-tuning ourselves. Unrelated to the KR6 / vacuum arm.
 
-## Prerequisite — check VRAM FIRST
-```bash
-nvidia-smi
-```
-The eval loads a 7B model in **bf16 ≈ 16 GB**. The script as shipped does not expose
-4-bit. So:
-- VRAM ≥ ~16 GB (24 GB ideal) → runs clean.
-- VRAM < 16 GB → likely OOM; needs a 4-bit patch to `run_libero_eval.py` (extra work,
-  not a clean today-win). Decide here before installing.
+## VRAM: <16 GB confirmed → run in 4-bit
+`get_vla()` passes `load_in_4bit=cfg.load_in_4bit` to the model load, and `GenerateConfig`
+defines `load_in_4bit: bool = False`. So **`--load_in_4bit True` is officially supported** —
+no patching. 4-bit 7B ≈ 6–8 GB. (Don't combine with `--load_in_8bit`; the script asserts
+against using both.)
 
-## Install (their pinned versions — use a dedicated conda env)
-The OpenVLA repo pins Python 3.10, PyTorch 2.2.0, transformers 4.40.1, flash-attn 2.5.5.
-Run LIBERO from the openvla repo's own env, separate from our phase5 venv.
+## Install (their pinned versions, dedicated conda env)
+Python 3.10, PyTorch 2.2.0, transformers 4.40.1, flash-attn 2.5.5. Run from the openvla
+repo's own env, separate from our phase5 venv.
 
 ```bash
-# 1) openvla env + repo
+# 1) env + repo
 conda create -n openvla python=3.10 -y
 conda activate openvla
-# install torch 2.2.0 matched to your CUDA (see pytorch.org); e.g. cu121 wheel:
 pip install torch==2.2.0 torchvision==0.17.0 --index-url https://download.pytorch.org/whl/cu121
 git clone https://github.com/openvla/openvla.git
 cd openvla
 pip install -e .
 
-# 2) flash-attn (can be slow/finicky; documented risk)
+# 2) REQUIRED for 4-bit
+pip install bitsandbytes
+
+# 3) flash-attn (mandatory unless you edit the code — see gotcha below)
 pip install packaging ninja
 ninja --version; echo $?            # expect 0
 pip install "flash-attn==2.5.5" --no-build-isolation
 
-# 3) LIBERO itself
+# 4) LIBERO
 git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git
 cd LIBERO && pip install -e . && cd ..
 pip install -r experiments/robot/libero/libero_requirements.txt
 ```
 
-## Run — LIBERO-Spatial, small trial count for a quick visible result
-The README default is 500 trials (10 tasks x 50). For a *today* demo, cut it down with
-`--num_trials_per_task` so you see success fast.
-
+## Run — LIBERO-Spatial, 4-bit, quick trial count
 ```bash
 cd openvla
 python experiments/robot/libero/run_libero_eval.py \
@@ -58,28 +54,33 @@ python experiments/robot/libero/run_libero_eval.py \
   --pretrained_checkpoint openvla/openvla-7b-finetuned-libero-spatial \
   --task_suite_name libero_spatial \
   --center_crop True \
+  --load_in_4bit True \
   --num_trials_per_task 3
 ```
-- `--center_crop True` is REQUIRED (they fine-tuned with random crops). Omitting it tanks success.
-- The checkpoint auto-downloads on first run (another ~14 GB — fire this early).
-- Logs locally; add `--use_wandb True --wandb_project <p> --wandb_entity <e>` to log online.
+- Checkpoint auto-downloads on first run (~14 GB — fire early).
+- `--center_crop True`: required (fine-tuned with random crops); it's also the default.
+- Replay MP4s + a text log are written under `./experiments/logs/`.
+- Add `--use_wandb True --wandb_project <p> --wandb_entity <e>` to log online (optional).
 
-## Known gotchas (from the README troubleshooting)
-- `tensorflow-datasets` error constructing a dataset → `pip install tensorflow-datasets==4.9.3`.
+## Gotchas (confirmed from source / README)
+- **flash-attn is hardcoded.** `openvla_utils.py::get_vla()` sets
+  `attn_implementation="flash_attention_2"`. If flash-attn won't build on your box, edit that
+  one line to `attn_implementation="sdpa"` (or `"eager"`) and skip the flash-attn install.
+- `tensorflow-datasets` dataset-construct error → `pip install tensorflow-datasets==4.9.3`.
 - `dlimp` / `traj_map` AttributeError → `pip install --no-deps --force-reinstall git+https://github.com/moojink/dlimp_openvla`.
-- flash-attn build failure → `pip cache remove flash_attn` then retry; if hopeless, this is the
-  fallback-to-FetchReach trigger from the session plan (don't burn the session here).
-- VRAM OOM on model load → see the prerequisite; needs a 4-bit patch.
+- Still OOM in 4-bit? Drop other GPU users; 4-bit 7B should sit ~6–8 GB.
+- Don't pass both `--load_in_4bit True` and `--load_in_8bit True` (assertion error).
 
 ## Where this sits in the day
-Session plan Hour 2. The reliable Hour 1 win (`run_openvla_mujoco.py --env fetch_reach`,
-our phase5 harness, base openvla-7b, supports 4-bit) does not depend on any of this — so
-even if LIBERO install bites, Hour 1 still gives you OpenVLA driving a sim arm.
+Session plan Hour 2. Hour 1 (`run_openvla_mujoco.py --env fetch_reach`, our phase5 harness,
+base openvla-7b, also 4-bit-capable) is independent — even if LIBERO install bites, Hour 1
+still gives OpenVLA driving a sim arm. Hard rule: LIBERO not green in ~25 min → fall back to
+a second FetchReach clip, don't burn the session on deps.
 
-## Other suites (same pattern, swap two args)
+## Other suites (swap two args + the matching checkpoint)
 `libero_object` → `--pretrained_checkpoint openvla/openvla-7b-finetuned-libero-object --task_suite_name libero_object`
 `libero_goal`   → `...-finetuned-libero-goal  --task_suite_name libero_goal`
 `libero_10`     → `...-finetuned-libero-10    --task_suite_name libero_10`
 
 ---
-*vla-sim-playground / docs | 2026-06-01 | commands quoted from openvla/openvla README*
+*vla-sim-playground / docs | 2026-06-01 | flags verified against openvla source*
