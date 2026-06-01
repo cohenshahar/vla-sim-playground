@@ -112,7 +112,7 @@ Save a rollout MP4 to `scratch/`. OpenVLA visibly driving a sim arm. **If you st
 
 ### Hour 2 (3:00–4:00) — LIBERO/Franka pick-and-place → "see the task"
 
-Follow `openvla/experiments/robot/libero/README.md`: install LIBERO, download the suite, run **one** `libero_spatial` task with `openvla/openvla-7b`. Save 1–2 rollout MP4s.
+Use **`docs/LIBERO_RUNSHEET.md`** (exact commands, fetched from the OpenVLA README). Key point: run the **provided LIBERO-fine-tuned checkpoint** `openvla/openvla-7b-finetuned-libero-spatial` (NOT base `openvla-7b` — base is poor on LIBERO) with `--center_crop True --num_trials_per_task 3`. Check VRAM first (`nvidia-smi`): the eval loads bf16 ≈ 16 GB; under that it may OOM and need a 4-bit patch.
 → **Milestone 3:** a Franka picking a block under a language command, success/fail printed. *This is the genuine pick-and-place moment.*
 **Hard rule:** not green in ~25 min → stop, fall back to another FetchReach clip with a different instruction. Don't burn the hour on deps.
 
