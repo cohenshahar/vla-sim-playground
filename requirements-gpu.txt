@@ -1,0 +1,41 @@
+# phase5_openvla / requirements-gpu.txt
+# ---------------------------------------------------------------
+# Target: Ubuntu 22.04 with NVIDIA CUDA 12.1 (what PyTorch wheels expect).
+# Use this file AFTER migrating off Windows.
+#
+# Install order:
+#
+#   python -m pip install --upgrade pip
+#   pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
+#   pip install -r requirements-gpu.txt
+#
+# Versions track OpenVLA upstream. Do not silently upgrade transformers
+# past 4.40.x until you've verified the Prismatic processor still loads.
+# ---------------------------------------------------------------
+
+# --- HuggingFace stack -------------------------------------------
+transformers==4.40.1
+tokenizers==0.19.1
+accelerate==0.31.0
+huggingface_hub>=0.23.0,<1.0
+safetensors>=0.4.0
+
+# --- Vision backbones --------------------------------------------
+timm==0.9.10
+Pillow>=9.5.0,<11.0
+
+# --- Quantization & CUDA kernels (GPU only) ----------------------
+bitsandbytes==0.43.1      # needed for load_in_4bit / load_in_8bit
+# flash-attn is optional and finicky; skip unless you need speed.
+# flash-attn==2.5.9.post1
+
+# --- Simulation ---------------------------------------------------
+mujoco==3.1.6
+gymnasium==0.29.1
+gymnasium-robotics==1.2.4
+
+# --- Utilities ----------------------------------------------------
+numpy>=1.24,<2.0
+psutil>=5.9.0
+einops>=0.7.0
+sentencepiece>=0.2.0

@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# venv
+.venv/
+venv/
+env/
+
+# HuggingFace weights / caches (HUGE — never commit)
+.hf_cache/
+hf_cache/
+offload/
+*.safetensors
+*.bin
+
+# scratch / outputs
+scratch/
+logs/
+*.mp4
+*.npy
+*.png
+*.jpg
+
+# secrets
+.env
+*token*
+*.key
+
+# OS
+.DS_Store
+Thumbs.db

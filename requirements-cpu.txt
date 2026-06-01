@@ -1,0 +1,49 @@
+# phase5_openvla / requirements-cpu.txt
+# ---------------------------------------------------------------
+# Target: Windows 10/11, CPU-only (no CUDA, no bitsandbytes).
+# Also valid on Ubuntu CPU.
+#
+# Install order matters when the user does not already have torch.
+# Recommended command (CPU wheels, Windows/Linux both work):
+#
+#   python -m pip install --upgrade pip
+#   pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements-cpu.txt
+#
+# The pins below match OpenVLA's upstream compatibility matrix
+# (transformers 4.40.x + timm 0.9.x). Changing these tends to break
+# the Prismatic/OpenVLA custom processor classes.
+# ---------------------------------------------------------------
+
+# --- Core ML (CPU wheels) -----------------------------------------
+# torch is installed separately from the PyTorch CPU index above.
+# torchvision is optional for OpenVLA inference; skip to save space.
+
+# --- HuggingFace stack -------------------------------------------
+transformers==4.40.1
+tokenizers==0.19.1
+accelerate==0.31.0
+huggingface_hub>=0.23.0,<1.0
+safetensors>=0.4.0
+
+# --- Vision backbones OpenVLA needs ------------------------------
+timm==0.9.10
+Pillow>=9.5.0,<11.0
+
+# --- Simulation ---------------------------------------------------
+# mujoco is usually already installed in your phase4; pin a known-good
+# version just in case.
+mujoco==3.1.6
+gymnasium==0.29.1
+gymnasium-robotics==1.2.4
+
+# --- Utilities ----------------------------------------------------
+numpy>=1.24,<2.0          # transformers 4.40 is not numpy-2 clean
+psutil>=5.9.0
+einops>=0.7.0
+sentencepiece>=0.2.0      # LLaMA-2 tokenizer needs it
+
+# --- Explicitly NOT installed on Windows CPU ---------------------
+# bitsandbytes        -> CUDA-only; will not import on CPU-only Windows.
+# flash-attn          -> CUDA-only; not needed for inference anyway.
+# xformers            -> CUDA-only.
