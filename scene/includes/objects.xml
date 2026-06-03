@@ -1,133 +1,56 @@
-<!--
-  scene/includes/objects.xml
-  ─────────────────────────────────────────────────────────────────────────
-  Phase 5 — Metal box (free body) and target zone (fixed).
-
-  DEFAULT positions are overridden at runtime by randomize_scene.py
-  before the first mj_step call.
-
-  Collision groups:
-    Box geom:    contype=4  conaffinity=6  (box group C)
-    Table/floor: contype=2  conaffinity=3  (world group B)
-    Arm geoms:   contype=1  conaffinity=2  (arm group A)
-
-    C vs B: (4&3)|(2&6) = 0|4 ≠ 0  → box collides with table/floor ✓
-    C vs A: (4&2)|(1&6) = 0|0 = 0   → box does NOT collide with arm ✓
-
-  Single-side attachment rule:
-    Only box_top_site exists on the box.
-    em_controller.py also checks box orientation before attaching.
-  ─────────────────────────────────────────────────────────────────────────
--->
 <mujoco>
 
   <asset>
-    <material name="metal_box_mat"
-              rgba="0.72 0.72 0.78 1"
-              specular="0.6"
-              shininess="0.4"/>
-    <material name="metal_sphere_mat"
-              rgba="0.60 0.65 0.80 1"
-              specular="0.7"
-              shininess="0.5"/>
-    <material name="target_zone_mat"
-              rgba="1.0 0.0 0.0 1"
-              specular="0.05"
-              shininess="0.1"/>
+    <material name="metal_box_mat" rgba="0.72 0.72 0.78 1" specular="0.6" shininess="0.4" />
+    <material name="metal_sphere_mat" rgba="0.60 0.65 0.80 1" specular="0.7" shininess="0.5" />
+    <material name="target_zone_mat" rgba="1.0 0.0 0.0 1" specular="0.05" shininess="0.1" />
   </asset>
 
   <worldbody>
 
-    <!--
-      ── Metal box (Phase 5, Task 5.1) ──────────────────────────────────
-      freejoint → box can move under physics.
-      DEFAULT pos overridden by randomize_scene() before first mj_step.
-    -->
-    <!-- Box default: directly under EM snap-pose position (X=0.76, Y=0) on table surface -->
+    
+    
     <body name="metal_box" pos="0.76 0 0.90">
-      <freejoint name="box_freejoint"/>
+      <freejoint name="box_freejoint" />
 
-      <!-- Task 5.2: mass on the geom → MuJoCo derives density, then computes
-           the full inertia tensor automatically from the box half-sizes.
-           Change only 'size' and 'mass' here; inertia follows for free. -->
-      <geom name="box_geom"
-            type="box"
-            size="0.05 0.05 0.05"
-            mass="0.5"
-            material="metal_box_mat"
-            friction="0.8 0.005 0.0001"
-            condim="6"
-            contype="4" conaffinity="6"/>
+      
+      <geom name="box_geom" type="box" size="0.05 0.05 0.05" mass="0.5" material="metal_box_mat" friction="0.8 0.005 0.0001" condim="6" contype="4" conaffinity="6" />
 
-      <!--
-        box_top_site — THE ONLY ATTACHMENT SITE (single-side rule).
-        Located at the top face (+Z of box, 5 cm up from centre).
-        em_controller checks orientation before weld activation.
-      -->
-      <site name="box_top_site"
-            pos="0 0 0.05"
-            size="0.005"
-            rgba="0 1 0 0.5"/>
-    </body><!-- metal_box -->
+      
+      <site name="box_top_site" pos="0 0 0.05" size="0.005" rgba="0 1 0 0.5" />
+    </body>
 
-    <!--
-      ── Metal sphere (Phase 10, Task 10.6) ──────────────────────────────
-      Second graspable object.  radius=0.04 m, mass=0.3 kg.
-      Position [0.55, 0.15, 0.88] puts the sphere next to the metal box.
-      sphere_top_site is at the top of the sphere (local +Z = +0.04 m).
-      Grasping is handled by the shape-agnostic proximity check in
-      em_controller.py — no site-specific distance check required.
-    -->
+    
     <body name="metal_sphere" pos="0.55 0.15 0.88">
-      <freejoint name="sphere_freejoint"/>
+      <freejoint name="sphere_freejoint" />
 
-      <geom name="sphere_geom"
-            type="sphere"
-            size="0.04"
-            mass="0.3"
-            material="metal_sphere_mat"
-            friction="0.8 0.005 0.0001"
-            condim="6"
-            contype="4" conaffinity="6"/>
+      <geom name="sphere_geom" type="sphere" size="0.04" mass="0.3" material="metal_sphere_mat" friction="0.8 0.005 0.0001" condim="6" contype="4" conaffinity="6" />
 
-      <!-- Reference site at top of sphere (body local +Z). -->
-      <site name="sphere_top_site"
-            pos="0 0 0.04"
-            size="0.005"
-            rgba="0 0.8 1 0.5"/>
-    </body><!-- metal_sphere -->
+      
+      <site name="sphere_top_site" pos="0 0 0.04" size="0.005" rgba="0 0.8 1 0.5" />
+    </body>
 
-    <!--
-      ── Target zone (Phase 5, Task 5.5) ─────────────────────────────────
-      Fixed body (no joint) — orange square pad on table surface.
-      DEFAULT pos overridden by randomize_scene() via model.body_pos.
-      15 cm × 15 cm × 2 cm tall (half-sizes: 0.075, 0.075, 0.01).
-    -->
-    <!-- Target zone: far side of table, arm must rotate A1 ~90° to reach it -->
+    
+    
     <body name="target_zone" pos="0.5 0.4 0.86">
-      <geom name="target_geom"
-            type="box"
-            size="0.075 0.1 0.01"
-            material="target_zone_mat"
-            condim="3"
-            contype="2" conaffinity="3"/>
+      <geom name="target_geom" type="box" size="0.075 0.1 0.01" material="target_zone_mat" condim="3" contype="2" conaffinity="3" />
 
-      <!-- Site for touch sensor — at the top face of the target pad -->
-      <site name="target_touch_site"
-            type="box"
-            pos="0 0 0.01"
-            size="0.075 0.1 0.002"
-            rgba="1 1 0 0"/>
-    </body><!-- target_zone -->
+      
+      <site name="target_touch_site" type="box" pos="0 0 0.01" size="0.075 0.1 0.002" rgba="1 1 0 0" />
+    </body>
 
-  </worldbody>
+  <body name="bin" pos="0.55 0.25 0.85">
+  <geom name="bin_floor" type="box" size="0.10 0.10 0.005" pos="0 0 0.005" rgba="0.55 0.38 0.20 1" contype="2" conaffinity="3" />
+  <geom name="bin_wall_px" type="box" size="0.005 0.10 0.04" pos="0.10 0 0.04" rgba="0.55 0.38 0.20 1" contype="2" conaffinity="3" />
+  <geom name="bin_wall_nx" type="box" size="0.005 0.10 0.04" pos="-0.10 0 0.04" rgba="0.55 0.38 0.20 1" contype="2" conaffinity="3" />
+  <geom name="bin_wall_py" type="box" size="0.10 0.005 0.04" pos="0 0.10 0.04" rgba="0.55 0.38 0.20 1" contype="2" conaffinity="3" />
+  <geom name="bin_wall_ny" type="box" size="0.10 0.005 0.04" pos="0 -0.10 0.04" rgba="0.55 0.38 0.20 1" contype="2" conaffinity="3" />
+  <site name="bin_center" pos="0 0 0.02" size="0.005" rgba="0 1 0 0.4" />
+</body></worldbody>
 
-  <!--
-    Touch sensor on the target zone (Phase 5, Task 5.6).
-    Outputs summed normal contact force on target_touch_site body.
-  -->
+  
   <sensor>
-    <touch name="target_touch_sensor" site="target_touch_site"/>
+    <touch name="target_touch_sensor" site="target_touch_site" />
   </sensor>
 
 </mujoco>

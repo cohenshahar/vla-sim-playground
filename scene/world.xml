@@ -1,123 +1,82 @@
 <mujoco model="kuka_scene">
-  <!--
-  ═══════════════════════════════════════════════════════════════════════
-   scene/world.xml  —  PURE ASSEMBLER.  Do not add geometry here.
-   Swap any component by replacing its include file:
-     includes/arm.xml    → robot module (position defined inside)
-     includes/table.xml  → furniture module
-     includes/lights.xml → lighting rig module
-  ═══════════════════════════════════════════════════════════════════════
-  -->
+  
 
-  <!-- ── Default free-camera framing ─────────────────────────────── -->
-  <!-- center = middle of the table workspace, extent = scene radius   -->
-  <!-- This makes the viewer open already zoomed in on the scene.      -->
-  <statistic center="0 0.1 0.9" extent="1.5"/>
+  
+  
+  
+  <statistic center="0 0.1 0.9" extent="1.5" />
 
-  <!-- ── Physics options (Task 2.4) ──────────────────────────────── -->
-  <!--
-    timestep = 0.001 s  → 1000 Hz physics
-    gravity  = -9.81 m/s² in Z
-    integrator = RK4    → better stability for rigid kinematic chains
-    solver = Newton (default for MuJoCo 3.x)
-  -->
-  <option timestep="0.001"
-          gravity="0 0 -9.81"
-          integrator="RK4"/>
+  
+  
+  <option timestep="0.001" gravity="0 0 -9.81" integrator="RK4" />
 
-  <!-- ── Component modules ────────────────────────────────────────── -->
-  <include file="includes/arm.xml"/>
-  <include file="includes/table.xml"/>
-  <include file="includes/lights.xml"/>
-  <include file="includes/objects.xml"/>
-  <include file="includes/cage.xml"/>
+  
+  <include file="includes/arm.xml" />
+  <include file="includes/table.xml" />
+  <include file="includes/lights.xml" />
+  <include file="includes/objects.xml" />
+  <include file="includes/cage.xml" />
 
-  <!-- ── Visual / render settings ────────────────────────────────── -->
+  
   <visual>
-    <global offwidth="1280" offheight="720"/>
-    <!-- Dim headlight so directional key/fill lights define the mood -->
-    <headlight ambient="0.15 0.15 0.15" diffuse="0.2 0.2 0.2" specular="0 0 0"/>
+    <global offwidth="1280" offheight="720" />
+    
+    <headlight ambient="0.15 0.15 0.15" diffuse="0.2 0.2 0.2" specular="0 0 0" />
   </visual>
 
-  <!-- ── EM attachment equality constraint (Phase 6, Task 6.1) ──────── -->
-  <!-- Single weld between em_pad and metal_box, initially inactive.     -->
-  <!-- relpose is overwritten at runtime by em_activate() with the       -->
-  <!-- CURRENT relative pose of the box w.r.t. em_pad at snap time —    -->
-  <!-- so the box stays exactly at the EM face and is never rotated.     -->
-  <equality>
-    <weld name="em_weld" body1="em_pad" body2="metal_box"
-          relpose="0 0 0 1 0 0 0" active="false"/>
-  </equality>
-
-  <!-- ── World-level geometry (not part of any swappable component) -->
+  
+  
+  
+  
+  
   <worldbody>
 
-    <!-- Ground plane: 10 m × 10 m, medium grey -->
-    <geom name="floor"
-          type="plane"
-          size="5 5 0.1"
-          rgba="0.55 0.55 0.55 1"
-          condim="3"
-          contype="2" conaffinity="3"/>
+    
+    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.55 0.55 0.55 1" condim="3" contype="2" conaffinity="3" />
 
-    <!-- Cameras are cage-mounted (see includes/cage.xml).
-         Wrist camera is on em_pad (see includes/arm.xml). -->
+    
 
   </worldbody>
 
-  <!-- ══════════════════════════════════════════════════════════════════
-       Phase 7 — Sensor Suite (Tasks 7.1–7.5)
-
-       Total sensordata: 6+6+6+3+3+1 = 25 sensors → 27 scalars
-         jointpos     × 6  → sensor_pos_A1   … sensor_pos_A6    (6 floats, 1 each)
-         jointvel     × 6  → sensor_vel_A1   … sensor_vel_A6    (6 floats, 1 each)
-         actuatorfrc  × 6  → sensor_torque_A1… sensor_torque_A6 (6 floats, 1 each)
-         force        × 1  → sensor_ee_force                    (3 floats)
-         torque       × 1  → sensor_ee_torque                   (3 floats)
-         rangefinder  × 1  → sensor_proximity                   (1 float)
-       Total: 6+6+6+3+3+1 = 25 scalars … wait, the spec says 27 columns.
-       The CSV layout: 6 pos + 6 vel + 6 torque + 3 ee_force + 3 ee_torque + 1 proximity
-       = 6+6+6+3+3+1 = 25 sensordata values → but the SensorLogger adds
-       a timestamp + joint_ctrl column for a 27-column CSV.
-  ════════════════════════════════════════════════════════════════════ -->
+  
   <sensor>
-    <!-- 7.1  Joint position sensors (1 float each) -->
-    <jointpos name="sensor_pos_A1" joint="joint_a1"/>
-    <jointpos name="sensor_pos_A2" joint="joint_a2"/>
-    <jointpos name="sensor_pos_A3" joint="joint_a3"/>
-    <jointpos name="sensor_pos_A4" joint="joint_a4"/>
-    <jointpos name="sensor_pos_A5" joint="joint_a5"/>
-    <jointpos name="sensor_pos_A6" joint="joint_a6"/>
+    
+    <jointpos name="sensor_pos_A1" joint="joint_a1" />
+    <jointpos name="sensor_pos_A2" joint="joint_a2" />
+    <jointpos name="sensor_pos_A3" joint="joint_a3" />
+    <jointpos name="sensor_pos_A4" joint="joint_a4" />
+    <jointpos name="sensor_pos_A5" joint="joint_a5" />
+    <jointpos name="sensor_pos_A6" joint="joint_a6" />
 
-    <!-- 7.2  Joint velocity sensors (1 float each) -->
-    <jointvel name="sensor_vel_A1" joint="joint_a1"/>
-    <jointvel name="sensor_vel_A2" joint="joint_a2"/>
-    <jointvel name="sensor_vel_A3" joint="joint_a3"/>
-    <jointvel name="sensor_vel_A4" joint="joint_a4"/>
-    <jointvel name="sensor_vel_A5" joint="joint_a5"/>
-    <jointvel name="sensor_vel_A6" joint="joint_a6"/>
+    
+    <jointvel name="sensor_vel_A1" joint="joint_a1" />
+    <jointvel name="sensor_vel_A2" joint="joint_a2" />
+    <jointvel name="sensor_vel_A3" joint="joint_a3" />
+    <jointvel name="sensor_vel_A4" joint="joint_a4" />
+    <jointvel name="sensor_vel_A5" joint="joint_a5" />
+    <jointvel name="sensor_vel_A6" joint="joint_a6" />
 
-    <!-- 7.3  Actuator force/torque sensors (1 float each) -->
-    <actuatorfrc name="sensor_torque_A1" actuator="act_a1"/>
-    <actuatorfrc name="sensor_torque_A2" actuator="act_a2"/>
-    <actuatorfrc name="sensor_torque_A3" actuator="act_a3"/>
-    <actuatorfrc name="sensor_torque_A4" actuator="act_a4"/>
-    <actuatorfrc name="sensor_torque_A5" actuator="act_a5"/>
-    <actuatorfrc name="sensor_torque_A6" actuator="act_a6"/>
+    
+    <actuatorfrc name="sensor_torque_A1" actuator="act_a1" />
+    <actuatorfrc name="sensor_torque_A2" actuator="act_a2" />
+    <actuatorfrc name="sensor_torque_A3" actuator="act_a3" />
+    <actuatorfrc name="sensor_torque_A4" actuator="act_a4" />
+    <actuatorfrc name="sensor_torque_A5" actuator="act_a5" />
+    <actuatorfrc name="sensor_torque_A6" actuator="act_a6" />
 
-    <!-- 7.4  End-effector force + torque at EM contact site (3 floats each) -->
-    <force  name="sensor_ee_force"  site="em_contact_site"/>
-    <torque name="sensor_ee_torque" site="em_contact_site"/>
+    
+    <force name="sensor_ee_force" site="cup_contact_site" />
+    <torque name="sensor_ee_torque" site="cup_contact_site" />
 
-    <!-- 7.5  Proximity rangefinder at EM contact site (1 float) -->
-    <!--      Reports distance to first geom hit along site's local +Z axis. -->
-    <!--      Returns -1.0 when no surface is hit within range.              -->
-    <rangefinder name="sensor_proximity" site="em_contact_site"/>
+    
+    
+    
+    <rangefinder name="sensor_proximity" site="cup_contact_site" />
 
-    <!-- 7.6  EM contact touch sensor ─────────────────────────────────── -->
-    <!--      Fires when em_touch_geom (on em_pad face) contacts the box.  -->
-    <!--      Returns total normal contact force in Newtons.               -->
-    <touch name="sensor_em_touch" site="em_touch_site"/>
+    
+    
+    
+    <touch name="sensor_em_touch" site="cup_contact_site" />
   </sensor>
 
 </mujoco>
