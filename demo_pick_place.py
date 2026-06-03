@@ -20,19 +20,19 @@ import mujoco
 
 # ----------------------------- TUNABLE KNOBS --------------------------------
 N_SAMPLE   = 150000
-TILT_MAX   = 6.0
+TILT_MAX   = 12.0   # relaxed: cup 'roughly down', not perfectly vertical
 GRASP_Z    = (0.95, 1.05)
-REGION_X   = (0.27, 0.49)   # interior only: away from the base
-REGION_Y   = (-0.23, 0.13)   # interior only: off the -y reach edge
+REGION_X   = (0.22, 0.52)   # widened; grab is now descend-to-contact
+REGION_Y   = (-0.26, 0.15)   # widened
 MIN_SEP    = 0.24
 CRATE_FIT_X = (-0.70, 0.70)
 CRATE_FIT_Y = (-0.24, 0.24)
-PATH_TILT_WARN = 15.0
+PATH_TILT_WARN = 20.0
 
 ARM_DAMPING = 40.0; COMP_DAMPING = 15.0; VAC_GAIN = 100.0
 VAC_ON_STEPS = 200; VAC_OFF_STEPS = 300; LIFT_STEPS = 800
 SEGMENT_STEPS = 300; N_CARRY = 10
-SEAT_Z = 0.952; RELEASE_GAP = 0.012
+SEAT_Z = 0.948; RELEASE_GAP = 0.012
 CACHE = "reachable_cupdown.npz"
 # ---------------------------------------------------------------------------
 
@@ -199,7 +199,11 @@ def run_episode(s, viewer=False, realtime=False, verbose=False):
     settle(60); rep("start")
     move(s["q_start"], s["q_home"], 500)
     move(s["q_home"], s["q_hi_pick"], 500); rep("reached")
-    move(s["q_hi_pick"], s["q_seat"], 350); settle(60); rep("seated")
+    A = s["q_hi_pick"]; B = s["q_seat"]          # final straight-down descent...
+    for i in range(400):                          # ...stop the instant the cup contacts the box
+        a = (i+1)/400; d.ctrl[act] = (1-a)*np.array(A) + a*np.array(B); gcs()
+        if abs(d.qpos[cq]) > 0.003: break
+    settle(60); rep("seated")
     ramp(0.0, VAC_GAIN, VAC_ON_STEPS); settle(120); rep("vacuum-on")
     move(s["q_seat"], s["q_hi_pick"], LIFT_STEPS); settle(150); rep("lifted")
     for A, B in zip(s["carry"][:-1], s["carry"][1:]): move(A, B, SEGMENT_STEPS)

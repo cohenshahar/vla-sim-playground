@@ -33,3 +33,8 @@ logs/
 .DS_Store
 Thumbs.db
 reachable_cupdown.npz
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+__pycache__/
+*.egg-info/
