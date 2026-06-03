@@ -1,0 +1,227 @@
+<!--
+  scene/includes/arm.xml
+  ─────────────────────────────────────────────────────────────────────────
+  Task 2.3 — KUKA KR6 R900 sixx arm, mounted on the table.
+
+  Mount point: centre-back edge of table.
+    kuka_base pos = (0, -0.3, 0.85)
+      X = 0      : centred on table width
+      Y = -0.3   : back area of table
+      Z = 0.85   : flush with table surface
+
+  To swap the robot, replace only this file.
+  To move the mount point, change kuka_base pos below.
+  ─────────────────────────────────────────────────────────────────────────
+-->
+<mujoco>
+  <compiler meshdir="../assets/urdf/meshes/" angle="radian"/>
+
+  <asset>
+    <mesh name="base_link" content_type="model/stl" file="base_link.stl"/>
+    <mesh name="link_1"    content_type="model/stl" file="link_1.stl"/>
+    <mesh name="link_2"    content_type="model/stl" file="link_2.stl"/>
+    <mesh name="link_3"    content_type="model/stl" file="link_3.stl"/>
+    <mesh name="link_4"    content_type="model/stl" file="link_4.stl"/>
+    <mesh name="link_5"    content_type="model/stl" file="link_5.stl"/>
+    <mesh name="link_6"    content_type="model/stl" file="link_6.stl"/>
+  </asset>
+
+  <worldbody>
+    <!--
+      kuka_base is the single configuration point for arm placement.
+      Change pos here to mount the arm anywhere in the world.
+    -->
+    <body name="kuka_base" pos="0 -0.3 0.85">
+
+      <!--
+        Collision groups:
+          contype=1 conaffinity=2  → arm geoms (group A)
+          contype=2 conaffinity=3  → world geoms: table, floor (group B)
+        Rule: A vs A = (1&2)|(1&2) = 0  → arm links do NOT self-collide
+               A vs B = (1&3)|(2&2) ≠ 0 → arm DOES collide with table/floor
+        This prevents dense STL meshes from jamming the kinematic chain.
+      -->
+
+      <!-- Base link: fixed pedestal — collision disabled (it's bolted to the table) -->
+      <geom type="mesh" rgba="0.3 0.3 0.3 1" mesh="base_link"
+            contype="0" conaffinity="0"/>
+
+      <!-- Arm kinematic chain -->
+      <body name="link_1" pos="0 0 0.4">
+        <joint name="joint_a1" pos="0 0 0" axis="0 0 -1" range="-2.96706 2.96706" limited="true"/>
+        <geom type="mesh" rgba="1 0.42 0 1" mesh="link_1"
+              contype="1" conaffinity="2"/>
+
+        <body name="link_2" pos="0.025 0 0">
+          <joint name="joint_a2" pos="0 0 0" axis="0 1 0" range="-3.31613 0.785398" limited="true"/>
+          <geom type="mesh" rgba="1 0.42 0 1" mesh="link_2"
+                contype="1" conaffinity="2"/>
+
+          <body name="link_3" pos="0.455 0 0">
+            <joint name="joint_a3" pos="0 0 0" axis="0 1 0" range="-2.0944 2.72271" limited="true"/>
+            <geom type="mesh" rgba="1 0.42 0 1" mesh="link_3"
+                  contype="1" conaffinity="2"/>
+
+            <body name="link_4" pos="0 0 0.035">
+              <joint name="joint_a4" pos="0 0 0" axis="-1 0 0" range="-3.22886 3.22886" limited="true"/>
+              <geom type="mesh" rgba="1 0.42 0 1" mesh="link_4"
+                    contype="1" conaffinity="2"/>
+
+              <body name="link_5" pos="0.42 0 0">
+                <joint name="joint_a5" pos="0 0 0" axis="0 1 0" range="-2.0944 2.0944" limited="true"/>
+                <geom type="mesh" rgba="1 0.42 0 1" mesh="link_5"
+                      contype="1" conaffinity="2"/>
+
+                <body name="link_6" pos="0.08 0 0">
+                  <joint name="joint_a6" pos="0 0 0" axis="-1 0 0" range="-6.10865 6.10865" limited="true"/>
+                  <geom type="mesh" rgba="0.3 0.3 0.3 1" mesh="link_6"
+                        contype="1" conaffinity="2"/>
+
+                  <!--
+                    EM end-effector pad (Phase 4 — Task 4.1)
+                    Cylinder axis along local X (arm extension direction).
+                    8 cm diameter (size="0.04"), 2 cm thick (fromto spans ±0.01 m).
+                    pos="0.01 0 0" → back face of cylinder sits at link_6 origin,
+                    front face at +0.02 m — flush with the flange tip, no gap.
+                    Dark grey, same arm collision group.
+                  -->
+                  <body name="em_pad" pos="0.01 0 0">
+                    <!-- Cylinder: local X axis, radius=0.04, half-length=0.01 -->
+                    <geom name="em_pad_geom"
+                          type="cylinder"
+                          fromto="-0.01 0 0  0.01 0 0"
+                          size="0.04"
+                          rgba="0.18 0.18 0.18 1"
+                          contype="1" conaffinity="2"/>
+
+                    <!--
+                      Three attachment sites on the EM face (x=0.01 in em_pad frame).
+                      They form a triangle at radius ~0.03 m from face centre.
+                      Three non-collinear points fully constrain all 6 DOF of the box.
+                        A — face centre
+                        B — +Y offset (left/right)
+                        C — +Z offset (up/down in arm local frame)
+                    -->
+                    <site name="em_contact_site"
+                          pos="0.01 0 0"
+                          euler="0 90 0"
+                          size="0.005" rgba="1 0 0 0.5"/>
+                    <!-- euler="0 90 0": rotates site Z to align with em_pad +X (the EM face axis).
+                         In the R_DOWN reach pose, em_pad +X ≈ world -Z (downward),
+                         so the rangefinder fires straight down toward the box. -->
+                    <site name="em_dot_b"
+                          pos="0.01 0.03 0"
+                          size="0.005" rgba="0 1 0 0.5"/>
+                    <site name="em_dot_c"
+                          pos="0.01 0 0.03"
+                          size="0.005" rgba="0 0 1 0.5"/>
+
+                    <!--
+                      EM touch sensing geom (Phase 7, Task 7.6)
+                      A 3 mm-thick cylinder embedded just inside the EM face.
+                      Special collision group: only reacts with the box.
+                        contype=8  conaffinity=4
+                        Box: contype=4, conaffinity=6
+                        Check: (8&6)|(4&4) = 0|4 = 4 ≠ 0  → touches box ✓
+                        Arm: (8&2)|(1&4) = 0|0 = 0         → no arm self-contact ✓
+                        Table: (8&3)|(2&4) = 0|0 = 0        → no table contact ✓
+                      condim=1 → frictionless (minimal physics disturbance).
+                      Paired with sensor_em_touch <touch site="em_touch_site"/>.
+                    -->
+                    <geom name="em_touch_geom"
+                          type="cylinder"
+                          fromto="0.008 0 0  0.011 0 0"
+                          size="0.038"
+                          rgba="1 0.4 0 0.25"
+                          condim="1"
+                          contype="8" conaffinity="4"/>
+
+                    <!-- Site for EM touch sensor (at face centre, used by <touch> sensor) -->
+                    <site name="em_touch_site"
+                          pos="0.01 0 0"
+                          size="0.004"
+                          rgba="1 0.5 0 0"/>
+
+                    <!--
+                      ══ Wrist Camera (Phase 8, Task 8.3) ═══════════════════════
+                      Mounted on em_pad → moves with ALL 6 joints including A6.
+
+                      Position in em_pad frame:
+                        pos="-0.02 0 0.05"
+                        → 2 cm behind em_pad centre (away from EM contact face)
+                        → 5 cm above the EM cylinder axis (em_pad +Z direction)
+
+                      Orientation — forward with 20° downward tilt toward workspace:
+                        Camera Z (optical) = (cos20°, 0, -sin20°) = (0.940, 0, -0.342)
+                        Camera X (img right) = em_pad +Y = (0, 1, 0)
+                        Camera Y            = (0.342, 0, 0.940)
+                        xyaxes = "0 1 0  0.342 0 0.940"
+                        Verify: X×Y = (0,1,0)×(0.342,0,0.940) = (0.940,0,-0.342) = Z ✓
+
+                      Camera → EE tip geometry (em_pad frame):
+                        Camera at  (-0.02, 0,  0.05)
+                        EE tip at  ( 0.01, 0,  0.00)   ← em_contact_site
+                        Along optical axis: EE ~3 cm forward, 5 cm below.
+                        With 20° tilt and 80° FOV → EE lands near frame centre ✓
+
+                      Visual housing geoms (contype=0, no collision):
+                        cam_housing — dark box ~2.8×3.2×2.2 cm (camera body)
+                        cam_lens    — dark-blue sphere 1.4 cm dia (lens)
+                      ═══════════════════════════════════════════════════════════ -->
+
+                    <!-- Camera body housing (visual only) -->
+                    <geom name="cam_housing"
+                          type="box"
+                          pos="-0.02 0 0.05"
+                          size="0.014 0.016 0.011"
+                          rgba="0.08 0.08 0.08 1"
+                          contype="0" conaffinity="0"/>
+
+                    <!-- Lens (visual only) — dark-blue sphere at front face of housing -->
+                    <geom name="cam_lens"
+                          type="sphere"
+                          pos="-0.006 0 0.05"
+                          size="0.007"
+                          rgba="0.10 0.14 0.30 1"
+                          contype="0" conaffinity="0"/>
+
+                    <!-- Egocentric VLA camera — optical axis tilted 20° downward -->
+                    <camera name="cam_wrist"
+                            pos="-0.02 0 0.10"
+                            xyaxes="0 1 0  -0.342 0 -0.940"
+                            fovy="80"/>
+
+                  </body><!-- em_pad -->
+
+                </body><!-- link_6 -->
+
+              </body><!-- link_5 -->
+            </body><!-- link_4 -->
+          </body><!-- link_3 -->
+        </body><!-- link_2 -->
+      </body><!-- link_1 -->
+
+    </body><!-- kuka_base -->
+  </worldbody>
+
+  <!--
+    Position actuators: one per joint (A1–A6).
+    Control via data.ctrl[0..5] in radians (target angle).
+    kp=200 gives firm but not twitchy response at 1 kHz physics.
+    To swap controller type, edit only this section.
+  -->
+  <actuator>
+    <!--
+      kp / kv will be overridden at runtime by tune_j1.py during tuning.
+      forcerange raised to ±500 Nm (proximal joints need torque for heavy links).
+      kv placeholder value 10 — tune_j1.py sets the real value per joint.
+    -->
+    <position name="act_a1" joint="joint_a1" kp="500" forcelimited="true" forcerange="-500 500"/>
+    <position name="act_a2" joint="joint_a2" kp="500" forcelimited="true" forcerange="-500 500"/>
+    <position name="act_a3" joint="joint_a3" kp="500" forcelimited="true" forcerange="-300 300"/>
+    <position name="act_a4" joint="joint_a4" kp="300" forcelimited="true" forcerange="-200 200"/>
+    <position name="act_a5" joint="joint_a5" kp="200" forcelimited="true" forcerange="-100 100"/>
+    <position name="act_a6" joint="joint_a6" kp="100" forcelimited="true" forcerange="-50  50"/>
+  </actuator>
+
+</mujoco>

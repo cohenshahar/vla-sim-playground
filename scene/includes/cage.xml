@@ -1,0 +1,152 @@
+<!--
+  scene/includes/cage.xml
+  ─────────────────────────────────────────────────────────────────────────
+  Safety cage + camera mount rail.
+
+  Structure:
+    4 corner posts  (X=±1.05, Y=±0.55) from floor to Z=2.2 m
+    Perimeter top frame connecting the posts at Z=2.2 m
+    1 camera-mount X-rail at (Y=0, Z=2.2 m) spanning the table width
+
+  Why Z=2.2 m:
+    ARM_BASE Z = 0.85.  link_1 adds 0.40 m → joint origin at 1.25 m.
+    KR6 R900 max reach ≈ 0.9 m → conservative world-Z ceiling ≈ 2.15 m.
+    Rail at 2.2 m puts all camera hardware above max arm reach.
+
+  Camera bodies (visual box + camera element):
+    cam_mount_overhead — centre of X-rail, straight down, fovy=60°
+    cam_mount_side     — +X end of X-rail, angled toward workspace, fovy=60°
+  (cam_wrist is defined in arm.xml on the em_pad body)
+
+  All cage geoms: contype=0 conaffinity=0 — purely visual, no collisions.
+  Table half-extents: ±0.90 in X, ±0.40 in Y (surface Z=0.85 m).
+  ─────────────────────────────────────────────────────────────────────────
+-->
+<mujoco>
+  <asset>
+    <material name="cage_steel"
+              rgba="0.45 0.45 0.50 1"
+              specular="0.5"
+              shininess="0.4"/>
+    <material name="camera_housing"
+              rgba="0.08 0.08 0.08 1"
+              specular="0.25"
+              shininess="0.3"/>
+  </asset>
+
+  <worldbody>
+
+    <body name="cage" pos="0 0 0">
+
+      <!-- ── 4 corner posts (round tube, radius=0.02 m) ─────────────── -->
+      <geom name="post_fl" type="cylinder"
+            fromto="-1.05  0.55 0  -1.05  0.55 2.2"
+            size="0.02" material="cage_steel"
+            contype="0" conaffinity="0"/>
+      <geom name="post_fr" type="cylinder"
+            fromto=" 1.05  0.55 0   1.05  0.55 2.2"
+            size="0.02" material="cage_steel"
+            contype="0" conaffinity="0"/>
+      <geom name="post_bl" type="cylinder"
+            fromto="-1.05 -0.55 0  -1.05 -0.55 2.2"
+            size="0.02" material="cage_steel"
+            contype="0" conaffinity="0"/>
+      <geom name="post_br" type="cylinder"
+            fromto=" 1.05 -0.55 0   1.05 -0.55 2.2"
+            size="0.02" material="cage_steel"
+            contype="0" conaffinity="0"/>
+
+      <!-- ── Top perimeter frame ────────────────────────────────────── -->
+      <geom name="rail_front" type="cylinder"
+            fromto="-1.05  0.55 2.2   1.05  0.55 2.2"
+            size="0.02" material="cage_steel"
+            contype="0" conaffinity="0"/>
+      <geom name="rail_back" type="cylinder"
+            fromto="-1.05 -0.55 2.2   1.05 -0.55 2.2"
+            size="0.02" material="cage_steel"
+            contype="0" conaffinity="0"/>
+      <geom name="rail_left" type="cylinder"
+            fromto="-1.05 -0.55 2.2  -1.05  0.55 2.2"
+            size="0.02" material="cage_steel"
+            contype="0" conaffinity="0"/>
+      <geom name="rail_right" type="cylinder"
+            fromto=" 1.05 -0.55 2.2   1.05  0.55 2.2"
+            size="0.02" material="cage_steel"
+            contype="0" conaffinity="0"/>
+
+      <!-- ── Camera-mount X-rail (Y=0 centre line, Z=2.2 m) ────────── -->
+      <!-- Cameras hang from this rail; arm cannot reach this height.    -->
+      <geom name="rail_cam_x" type="cylinder"
+            fromto="-1.05 0 2.2   1.05 0 2.2"
+            size="0.025" material="cage_steel"
+            contype="0" conaffinity="0"/>
+
+      <!-- ══ Overhead camera ══════════════════════════════════════════
+           Mounted at centre of X-rail, looking straight down.
+           Pendant bracket: 5 cm box descending from rail face.
+           cam_overhead pos in body frame = (0,0,0) (at bracket centre).
+           xyaxes:  camera +Z = world −Z  (down)
+                    → camera X = world +X, camera Y = world +Y
+             Z = X×Y = (1,0,0)×(0,1,0) = (0,0,1) → looks along +Z = world +Z? No.
+             We want camera looking DOWN = world -Z = camera +Z direction.
+             So camera Z should = world -Z = (0,0,-1).
+             Use X=(1,0,0), Y=(-0,-1,0) ... actually from existing working cam_overhead:
+             xyaxes="1 0 0  0 -1 0" → Z=(0,0,-1) → looks along +Z=(0,0,-1) = world down ✓
+      ═══════════════════════════════════════════════════════════════ -->
+      <body name="cam_mount_overhead" pos="0.1 -0.05 2.0">
+        <!--
+          Camera looks straight down (world −Z).
+          Centered at (0.1, −0.05) over the workspace.
+          fovy=75° gives ~2.3m visible width at table height — covers full table.
+          xyaxes: camera X = world +X (right), camera Y = world −Y (up in image)
+          camera Z = X×Y = (0,0,−1) → looking down ✓
+        -->
+        <camera name="cam_overhead"
+                pos="0 0 0"
+                xyaxes="1 0 0  0 1 0"
+                fovy="75"/>
+      </body>
+
+      <!-- ══ Side / angled camera ═════════════════════════════════════
+           Mounted at +X end of rail (X=0.95, Y=0, Z=2.1),
+           angled to look toward workspace centre ≈ (0, 0, 0.9).
+           Direction: (−0.95, 0, −1.2) normalised ≈ (−0.620, 0, −0.784)
+           Camera X = (0,−1,0)  (image right = world −Y)
+           Camera Z = camera X × camera Y → solve Y:
+             Y = Z×X = (−0.620,0,−0.784)×(0,−1,0)
+               = (0×0−(−0.784)×(−1), (−0.784)×0−(−0.620)×0, (−0.620)×(−1)−0×0)
+               = (−0.784, 0, 0.620)
+             Verify: X×Y = (0,−1,0)×(−0.784,0,0.620)
+               = ((−1)×0.620−0×0, 0×(−0.784)−0×0.620, 0×0−(−1)×(−0.784))
+               = (−0.620, 0, −0.784) = Z ✓
+      ═══════════════════════════════════════════════════════════════ -->
+      <!--
+        Side camera: positioned at (1.4, −0.3, 1.35) — right side of scene,
+        same Y as arm base, at 0.5 m above table surface.
+        Looks toward workspace centre at approx (0, −0.3, 0.9).
+        Direction: (−1.4, 0, −0.45) normalised = (−0.952, 0, −0.306)
+        camera X = world −Y = (0,−1,0)  (image right)
+        camera Y = camera_Z × camera_X:
+          = (−0.952,0,−0.306) × (0,−1,0)
+          = (0×0−(−0.306)×(−1), (−0.306)×0−(−0.952)×0, (−0.952)×(−1)−0×0)
+          = (−0.306, 0, 0.952)
+        Verify X×Y = (0,−1,0)×(−0.306,0,0.952)
+          = ((−1)(0.952)−0, 0−0, 0−(−1)(−0.306))
+          = (−0.952, 0, −0.306) = Z ✓
+      -->
+      <body name="cam_mount_side" pos="1.4 -0.3 1.35">
+        <!--
+          xyaxes: camera X = (0,−1,0), camera Y = (−0.306, 0, 0.952)
+          camera Z = X×Y = (−0.952, 0, −0.306) → looks sideways and slightly down ✓
+          fovy=65° gives good coverage of the full arm height range.
+        -->
+        <camera name="cam_side"
+                pos="0 0 0"
+                xyaxes="0 1 0  -0.306 0 0.952"
+                fovy="65"/>
+      </body>
+
+    </body><!-- cage -->
+
+  </worldbody>
+</mujoco>

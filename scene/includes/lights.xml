@@ -1,0 +1,31 @@
+<!--
+  scene/includes/lights.xml
+  ─────────────────────────────────────────────────────────────────────────
+  Lighting rig: two directional lights (key + fill).
+  Include this file from scene/world.xml.
+  To change the lighting setup, replace only this file.
+  ─────────────────────────────────────────────────────────────────────────
+-->
+<mujoco>
+  <worldbody>
+
+    <!-- Key light: overhead, casts shadows -->
+    <light name="key"
+           pos="0 0 4"
+           dir="0 0 -1"
+           diffuse="0.9 0.9 0.9"
+           specular="0.3 0.3 0.3"
+           directional="true"
+           castshadow="true"/>
+
+    <!-- Fill light: front-left, softens harsh shadows -->
+    <light name="fill"
+           pos="2 -2 3"
+           dir="-0.5 0.5 -1"
+           diffuse="0.45 0.45 0.45"
+           specular="0 0 0"
+           directional="true"
+           castshadow="false"/>
+
+  </worldbody>
+</mujoco>

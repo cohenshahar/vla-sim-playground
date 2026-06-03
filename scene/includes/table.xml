@@ -1,0 +1,65 @@
+<!--
+  scene/includes/table.xml
+  ─────────────────────────────────────────────────────────────────────────
+  Task 2.2 — Table body.
+  Dimensions: 1.8 m wide (X) × 0.8 m deep (Y) × 0.05 m thick slab.
+  Tabletop surface at Z = 0.85 m.  Box half-sizes: 0.90 × 0.40 × 0.025.
+  Box centre at Z = 0.825 m.
+  4 legs: round, 0.04 m radius, 0.825 m tall (centre at Z = 0.4125 m).
+  Material: off-white / beige (light wood colour).
+  Fixed body — no joints, does not move.
+  To swap furniture, replace only this file.
+  ─────────────────────────────────────────────────────────────────────────
+-->
+<mujoco>
+  <asset>
+    <material name="table_wood"
+              rgba="0.85 0.78 0.65 1"
+              specular="0.1"
+              shininess="0.15"/>
+    <material name="table_leg"
+              rgba="0.6 0.55 0.45 1"
+              specular="0.05"
+              shininess="0.1"/>
+  </asset>
+
+  <worldbody>
+
+    <!-- Table: fixed body (no joints) centred at origin -->
+    <body name="table" pos="0 0 0">
+
+      <!-- Tabletop slab: surface at Z=0.85, half-thickness 0.025 → centre 0.825 -->
+      <geom name="tabletop"
+            type="box"
+            size="0.90 0.40 0.025"
+            pos="0 0 0.825"
+            material="table_wood"
+            condim="3"
+            contype="2" conaffinity="3"/>
+
+      <!-- Four legs at corners (X ±0.85, Y ±0.35) -->
+      <geom name="leg_fl"
+            type="cylinder"
+            size="0.025 0.4"
+            pos=" 0.85  0.35 0.4"
+            material="table_leg"/>
+      <geom name="leg_fr"
+            type="cylinder"
+            size="0.025 0.4"
+            pos=" 0.85 -0.35 0.4"
+            material="table_leg"/>
+      <geom name="leg_bl"
+            type="cylinder"
+            size="0.025 0.4"
+            pos="-0.85  0.35 0.4"
+            material="table_leg"/>
+      <geom name="leg_br"
+            type="cylinder"
+            size="0.025 0.4"
+            pos="-0.85 -0.35 0.4"
+            material="table_leg"/>
+
+    </body>
+
+  </worldbody>
+</mujoco>

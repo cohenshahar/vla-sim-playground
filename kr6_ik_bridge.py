@@ -27,7 +27,7 @@ from typing import Optional, Sequence
 import numpy as np
 
 
-KR6_EE_SITE = "em_contact_site"   # vacuum: set to "suction_tip_site"
+KR6_EE_SITE = "suction_tip_site"   # vacuum cup face
 KR6_ARM_JOINTS = ("joint_a1", "joint_a2", "joint_a3",
                   "joint_a4", "joint_a5", "joint_a6")
 KR6_ARM_ACTUATORS = ("act_a1", "act_a2", "act_a3",
