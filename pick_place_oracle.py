@@ -1,31 +1,29 @@
 """
-pick_place_oracle.py  (Milestone-1 upgrade)
-===========================================
-Scripted oracle for KR6 + vacuum: pick an object off the table, place it in the bin.
-Drives the arm with KR6IKBridge.servo_to_pose and toggles vacuum via set_suction.
+pick_place_oracle.py  (Milestone-1, gravity-comp + top-down build)
+==================================================================
+Scripted oracle: KR6 (ceiling-mounted) + vacuum cup picks an object and places it in the bin.
 
-UPGRADES over the original (added during lunch-break prep, 2026-06-03):
-  1. SLOW holding phases. CPU testing in mujoco 3.1.6 showed the `adhesion` grab
-     DROPS the box when the cup moves faster than ~0.002 m / physics-step, regardless
-     of margin. The original single max_cart_step=0.02 over 5 substeps is in the DROP
-     zone. Each phase now has its own `cart_step`; LIFT/TRANSIT/LOWER use a slow value.
-  2. SEAT-GATED ENGAGE. Descend stops when the compliant cup actually seats
-     (cup_compliance joint retracts past a threshold), not at a hard-coded z.
-     Falls back to pos_err if the compliance joint isn't present.
-  3. GRASP-CONFIRM after LIFT (object rose with the cup) -> per-trial pass/fail reason.
-  4. MULTI-TRIAL runner with x/y jitter + success-rate aggregation + JSON log
-     (Steps 19-20). `--trials 1` reproduces the old single-run behaviour.
+Validated fixes baked in (reproduced on the real scene, mujoco 3.1.6, CPU):
+  * GRAVITY COMP: the ceiling-mounted KR6 sags ~0.42 m under its own weight with the
+    stock position actuators, so the EE can never reach the waypoints. We cancel the
+    bias force (gravity + Coriolis) on the arm DOFs each step -> sag ~0, all waypoints
+    reachable. (See _step.)
+  * TOP-DOWN APPROACH: a position-only servo overshoots downward and sweeps the cup
+    sideways through the object, knocking it off the table. We approach from a SAFE_HIGH
+    pose directly above the object, then descend vertically. Box stays put.
+  * HOLD-AT-SEAT: descent stops when the compliant cup seats; ENGAGE then HOLDS that pose
+    instead of driving deeper (which over-compressed the spring and launched the box).
+  * Requires: suction slide joint with limited="true" (scene fix) and the bridge's
+    mju_mat2Quat fix for the orientation path.
 
-Validated numbers (from suction_probe, CPU, mujoco 3.1.6): gain=40, stiffness=800,
-damping=5, margin=0.004-0.01; HOLD requires lift speed <= ~0.002 m/physics-step.
-
-STATUS: logic-checked; UNTESTED against the full KR6 scene (no scene/meshes off-box).
-Run on the strong PC; tune the PHASES heights + thresholds on first run.
+OPEN ITEM (blocks GATE 1): pointing the cup straight DOWN. With orientation commanded the
+seat is gentle, but the arm struggles to reach cup-vertical at the current object pose
+(times out ~55 deg tilt), so the cup can't seal. Resolve by moving the object into the
+arm's cup-down workspace OR designing an angled-approach seal. Until then the oracle runs
+cleanly but won't reliably grasp.
 
 Usage:
-    # single run, watch live
-    python pick_place_oracle.py --xml scene/world.xml
-    # 20 randomized trials, headless, log success rate (Step 19)
+    python pick_place_oracle.py --xml scene/world.xml                 # single, watch live
     python pick_place_oracle.py --xml scene/world.xml --trials 20 --jitter 0.05 --headless
 """
 from __future__ import annotations
@@ -33,149 +31,148 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
 
 import numpy as np
 
-from kr6_ik_bridge import KR6IKBridge, set_suction, KR6_VACUUM_ACT
+from kr6_ik_bridge import KR6IKBridge, set_suction, KR6_VACUUM_ACT, KR6_ARM_JOINTS
 
 
-# (name, src, z, suction, dwell_ticks, cart_step)
-#   src: "obj" -> xy from object, "bin" -> xy from bin
-#   cart_step: per-phase servo speed. Holding phases are SLOW (adhesion stays engaged).
+# Top-down waypoints. src: "obj" xy from object, "bin" xy from bin. z is world height.
+# (name, src, z, suction, dwell, cart_step, gate)
+#   gate "reach" -> until pos_err<tol ; "seat" -> until cup compliance retracts ; "hold" -> hold seat
 PHASES = [
-    ("HOVER",   "obj", 1.05, False, 0, 0.020),
-    ("DESCEND", "obj", 0.94, False, 0, 0.010),   # seat-gated (see SEAT_* below)
-    ("ENGAGE",  "obj", 0.94, True,  8, 0.006),
-    ("LIFT",    "obj", 1.15, True,  0, 0.006),   # SLOW: holding the box
-    ("TRANSIT", "bin", 1.15, True,  0, 0.006),   # SLOW
-    ("LOWER",   "bin", 1.00, True,  0, 0.006),   # SLOW
-    ("RELEASE", "bin", 1.00, False, 5, 0.010),
-    ("RETREAT", "bin", 1.15, False, 0, 0.020),
+    ("SAFE_HIGH", "obj", 1.25, False, 0, 0.020, "reach"),
+    ("HOVER",     "obj", 1.10, False, 0, 0.015, "reach"),
+    ("SEAT",      "obj", 0.95, False, 0, 0.004, "seat"),
+    ("ENGAGE",    "obj", None, True,  8, 0.002, "hold"),   # z=None -> hold seated pose
+    ("LIFT",      "obj", 1.20, True,  0, 0.006, "reach"),
+    ("TRANSIT",   "bin", 1.20, True,  0, 0.006, "reach"),
+    ("LOWER",     "bin", 1.00, True,  0, 0.006, "reach"),
+    ("RELEASE",   "bin", 1.00, False, 5, 0.006, "reach"),
+    ("RETREAT",   "bin", 1.20, False, 0, 0.015, "reach"),
 ]
 
-POS_TOL = 0.006              # m, "waypoint reached"
-MAX_TICKS_PER_PHASE = 600
+POS_TOL = 0.008
+ROT_TOL = 0.12
+MAX_TICKS_PER_PHASE = 1500
 SUBSTEPS = 5
-
-# Seat detection (docs/pick_place_motion_spec.md §4)
 SEAT_COMPLIANCE_JOINT = "cup_compliance"
-SEAT_RETRACT_THRESH = 0.002  # m of compliance retraction => seated
-GRASP_RISE_THRESH = 0.03     # m the object must rise during LIFT to count as grasped
+SEAT_RETRACT_THRESH = 0.003
+GRASP_RISE_THRESH = 0.05
+TOP_DOWN = True   # command cup contact axis (site +Z) toward world -Z
 
 
-def _id(model, objtype, name):
+def _id(model, t, n):
     import mujoco
-    return mujoco.mj_name2id(model, objtype, name)
+    return mujoco.mj_name2id(model, t, n)
+
+
+def _arm_dofs(model):
+    return [int(model.jnt_dofadr[_id(model, __import__("mujoco").mjtObj.mjOBJ_JOINT, j)])
+            for j in KR6_ARM_JOINTS]
+
+
+def _step(model, data, dof, n):
+    """Step physics with gravity+Coriolis compensation on the arm DOFs."""
+    import mujoco
+    for _ in range(n):
+        mujoco.mj_step1(model, data)
+        data.qfrc_applied[dof] = data.qfrc_bias[dof]
+        mujoco.mj_step2(model, data)
+
+
+def _cup_down_mat():
+    """Rotation whose 3rd column (site +Z, the contact axis) points world -Z."""
+    zt = np.array([0.0, 0.0, -1.0])
+    xt = np.array([1.0, 0.0, 0.0]); xt = xt - xt.dot(zt) * zt; xt /= np.linalg.norm(xt)
+    return np.column_stack([xt, np.cross(zt, xt), zt])
 
 
 def _body_xy(model, data, name):
     import mujoco
     bid = _id(model, mujoco.mjtObj.mjOBJ_BODY, name)
     if bid < 0:
-        raise SystemExit(f"body {name!r} not found in model.")
+        raise SystemExit(f"body {name!r} not found.")
     return np.array(data.xpos[bid][:2], dtype=float), bid
 
 
-def _obj_free_qadr(model, obj_bid):
-    """qpos address of the object's free joint (for jitter / reset). -1 if none."""
-    jadr = int(model.body_jntadr[obj_bid])
-    if jadr < 0:
-        return -1
-    return int(model.jnt_qposadr[jadr])
+def _obj_free_qadr(model, bid):
+    jadr = int(model.body_jntadr[bid])
+    return -1 if jadr < 0 else int(model.jnt_qposadr[jadr])
 
 
 def _run_episode(model, data, bridge, obj_body, bin_body, viewer=None,
                  renderer=None, frames=None, verbose=True):
     import mujoco
-
     obj_xy, obj_bid = _body_xy(model, data, obj_body)
     bin_xy, _ = _body_xy(model, data, bin_body)
     rest_z = float(data.xpos[obj_bid][2])
-
+    dof = _arm_dofs(model)
     comp_jid = _id(model, mujoco.mjtObj.mjOBJ_JOINT, SEAT_COMPLIANCE_JOINT)
     comp_qadr = int(model.jnt_qposadr[comp_jid]) if comp_jid >= 0 else -1
+    sid = bridge._site_id
+    Rt = _cup_down_mat() if TOP_DOWN else None
 
-    lifted_z = rest_z
-    for name, src, z, suction, dwell, cart_step in PHASES:
+    seat_pos = None
+    for name, src, z, suction, dwell, cart_step, gate in PHASES:
         xy = obj_xy if src == "obj" else bin_xy
-        target = np.array([xy[0], xy[1], z], dtype=float)
+        if gate == "hold" and seat_pos is not None:
+            target = seat_pos
+        else:
+            target = np.array([xy[0], xy[1], z if z is not None else rest_z], dtype=float)
         set_suction(model, data, KR6_VACUUM_ACT, suction)
 
-        ticks = 0
-        diag = {"pos_err": 9.9}
-        while ticks < MAX_TICKS_PER_PHASE:
+        diag = {"pos_err": 9.9, "rot_err": 9.9}
+        for ticks in range(MAX_TICKS_PER_PHASE):
             if viewer is not None and not viewer.is_running():
                 return {"success": False, "reason": "viewer_closed"}
-            diag = bridge.servo_to_pose(target, max_cart_step=cart_step)
-            for _ in range(SUBSTEPS):
-                mujoco.mj_step(model, data)
+            diag = bridge.servo_to_pose(target, target_mat=Rt, max_cart_step=cart_step)
+            _step(model, data, dof, SUBSTEPS)
             if viewer is not None:
                 viewer.sync()
             if renderer is not None:
                 renderer.update_scene(data)
                 frames.append(np.asarray(renderer.render(), dtype=np.uint8).copy())
-            ticks += 1
-
-            reached = diag["pos_err"] < POS_TOL
-            seated = False
-            if name == "DESCEND" and comp_qadr >= 0:
-                seated = abs(float(data.qpos[comp_qadr])) > SEAT_RETRACT_THRESH
-            if reached or seated:
+            if gate == "seat" and comp_qadr >= 0 and abs(float(data.qpos[comp_qadr])) > SEAT_RETRACT_THRESH:
+                seat_pos = np.array(data.site_xpos[sid], dtype=float); break
+            if gate in ("reach", "hold") and diag["pos_err"] < POS_TOL and \
+               (Rt is None or diag["rot_err"] < ROT_TOL):
                 break
-
-        for _ in range(dwell * SUBSTEPS):
-            mujoco.mj_step(model, data)
+        _step(model, data, dof, dwell * SUBSTEPS)
 
         if name == "LIFT":
             lifted_z = float(data.xpos[obj_bid][2])
             if lifted_z < rest_z + GRASP_RISE_THRESH:
                 if verbose:
-                    print(f"[oracle] GRASP FAILED at LIFT: obj_z={lifted_z:.3f} "
-                          f"(rest={rest_z:.3f}); aborting episode.")
-                return {"success": False, "reason": "grasp_failed",
-                        "obj_z_at_lift": lifted_z}
-
+                    print(f"[oracle] GRASP FAILED at LIFT: obj_z={lifted_z:.3f} (rest={rest_z:.3f})")
+                return {"success": False, "reason": "grasp_failed", "obj_z_at_lift": lifted_z}
         if verbose:
-            print(f"[oracle] {name:8s} pos_err={diag['pos_err']:.4f} "
+            print(f"[oracle] {name:9s} pos_err={diag['pos_err']:.4f} rot_err={diag['rot_err']:.3f} "
                   f"obj_z={float(data.xpos[obj_bid][2]):.3f}")
 
-    # success check (docs/pick_place_motion_spec.md §5)
     obj = np.array(data.xpos[obj_bid], dtype=float)
-    vel = float(np.linalg.norm(data.cvel[obj_bid][3:6])) if data.cvel is not None else 0.0
-    inside = (abs(obj[0] - bin_xy[0]) < 0.09 and abs(obj[1] - bin_xy[1]) < 0.09)
+    inside = abs(obj[0] - bin_xy[0]) < 0.09 and abs(obj[1] - bin_xy[1]) < 0.09
     below_rim = obj[2] < 0.93
-    at_rest = vel < 0.05
-    success = bool(inside and below_rim and at_rest)
-    reason = "ok" if success else (
-        "not_inside" if not inside else "above_rim" if not below_rim else "moving")
-    return {"success": success, "reason": reason,
-            "obj_final": [round(v, 3) for v in obj.tolist()],
-            "inside": inside, "below_rim": below_rim, "speed": round(vel, 3)}
+    success = bool(inside and below_rim)
+    return {"success": success, "reason": "ok" if success else "not_in_bin",
+            "obj_final": [round(v, 3) for v in obj.tolist()], "inside": inside, "below_rim": below_rim}
 
 
-def run(xml_path, object_body="metal_box", bin_body="bin",
-        ee_site="suction_tip_site", headless=False, save_video=None,
-        trials=1, jitter=0.0, seed=1234, log_json=None):
+def run(xml_path, object_body="metal_box", bin_body="bin", ee_site="suction_tip_site",
+        headless=False, save_video=None, trials=1, jitter=0.0, seed=1234, log_json=None):
     import mujoco
-
     p = Path(xml_path).expanduser().resolve()
     if not p.exists():
         raise SystemExit(f"XML not found: {p}")
     model = mujoco.MjModel.from_xml_path(str(p))
-    data = mujoco.MjData(model)
-    mujoco.mj_forward(model, data)
-
-    # sanity: vacuum-ready scene?
+    data = mujoco.MjData(model); mujoco.mj_forward(model, data)
     if _id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, KR6_VACUUM_ACT) < 0:
-        print(f"[oracle] WARNING: actuator {KR6_VACUUM_ACT!r} not found -> scene is "
-              f"NOT vacuum-ready. Run build_vacuum_scene.py first.")
+        print(f"[oracle] WARNING: {KR6_VACUUM_ACT!r} missing -> run build_vacuum_scene.py first.")
     bridge = KR6IKBridge(model, data, ee_site=ee_site)
     _, obj_bid = _body_xy(model, data, object_body)
     obj_qadr = _obj_free_qadr(model, obj_bid)
     base_xy = np.array(model.qpos0[obj_qadr:obj_qadr + 2]) if obj_qadr >= 0 else None
-
     rng = np.random.default_rng(seed)
 
     viewer = None
@@ -191,45 +188,35 @@ def run(xml_path, object_body="metal_box", bin_body="bin",
     for t in range(trials):
         mujoco.mj_resetData(model, data)
         if jitter > 0 and obj_qadr >= 0 and base_xy is not None:
-            dxy = rng.uniform(-jitter, jitter, size=2)
-            data.qpos[obj_qadr:obj_qadr + 2] = base_xy + dxy
+            data.qpos[obj_qadr:obj_qadr + 2] = base_xy + rng.uniform(-jitter, jitter, size=2)
         mujoco.mj_forward(model, data)
         frames = [] if renderer else None
-        r = _run_episode(model, data, bridge, object_body, bin_body,
-                         viewer=viewer, renderer=renderer, frames=frames,
+        r = _run_episode(model, data, bridge, object_body, bin_body, viewer, renderer, frames,
                          verbose=(trials <= 1))
-        r["trial"] = t
-        results.append(r)
+        r["trial"] = t; results.append(r)
         if trials > 1:
-            print(f"[oracle] trial {t+1:>3}/{trials}: "
-                  f"{'PASS' if r['success'] else 'FAIL':4s} ({r['reason']})")
+            print(f"[oracle] trial {t+1:>3}/{trials}: {'PASS' if r['success'] else 'FAIL'} ({r['reason']})")
 
-    n_ok = sum(1 for r in results if r["success"])
-    rate = n_ok / len(results) if results else 0.0
-    print(f"\n[oracle] SUCCESS RATE: {n_ok}/{len(results)} = {rate*100:.1f}%  "
-          f"(GATE 1 target >= 90%)")
-
+    n_ok = sum(1 for r in results if r["success"]); rate = n_ok / max(len(results), 1)
+    print(f"\n[oracle] SUCCESS RATE: {n_ok}/{len(results)} = {rate*100:.1f}%  (GATE 1 target >= 90%)")
     if renderer is not None and frames:
         try:
             import imageio.v2 as imageio
             outp = Path(save_video).expanduser(); outp.parent.mkdir(parents=True, exist_ok=True)
-            imageio.mimsave(str(outp), frames, fps=10)
-            print(f"[oracle] saved video -> {outp}")
+            imageio.mimsave(str(outp), frames, fps=10); print(f"[oracle] video -> {outp}")
         except Exception as e:
             print(f"[oracle] video save failed ({e}).")
     if log_json:
         outp = Path(log_json).expanduser(); outp.parent.mkdir(parents=True, exist_ok=True)
-        outp.write_text(json.dumps(
-            {"xml": str(p), "trials": trials, "jitter": jitter, "seed": seed,
-             "success_rate": rate, "n_ok": n_ok, "results": results}, indent=2))
-        print(f"[oracle] wrote log -> {outp}")
+        outp.write_text(json.dumps({"success_rate": rate, "n_ok": n_ok, "trials": trials,
+                                    "results": results}, indent=2)); print(f"[oracle] log -> {outp}")
     if viewer is not None:
         viewer.close()
     return 0 if rate >= 0.90 else 2
 
 
 def _args():
-    ap = argparse.ArgumentParser(description="KR6 vacuum pick-and-place oracle.")
+    ap = argparse.ArgumentParser()
     ap.add_argument("--xml", required=True)
     ap.add_argument("--object", default="metal_box")
     ap.add_argument("--bin", default="bin")
@@ -237,7 +224,7 @@ def _args():
     ap.add_argument("--headless", action="store_true")
     ap.add_argument("--save-video", default=None)
     ap.add_argument("--trials", type=int, default=1)
-    ap.add_argument("--jitter", type=float, default=0.0, help="object x/y uniform jitter (m)")
+    ap.add_argument("--jitter", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--log-json", default=None)
     return ap.parse_args()

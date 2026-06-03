@@ -40,7 +40,7 @@ GAIN, STIFFNESS, DAMPING, MARGIN = 40, 800, 5, 0.004
 
 SUCTION_MOUNT_XML = f"""
 <body name="suction_mount" pos="0.01 0 0">
-  <joint name="cup_compliance" type="slide" axis="1 0 0" range="-0.010 0"
+  <joint name="cup_compliance" type="slide" axis="1 0 0" limited="true" range="-0.010 0"
          stiffness="{STIFFNESS}" damping="{DAMPING}" springref="0"/>
   <body name="suction_pad">
     <geom name="cup_geom" type="cylinder" fromto="-0.005 0 0  0.005 0 0" size="0.03"
@@ -137,6 +137,16 @@ def process_file(path: Path, apply: bool):
                 dirty = True
         elif has_vac:
             changes.append("act_vacuum already present (skip)")
+
+    # 3b. re-point EM-referenced sensors to the new cup contact site (else the scene
+    #     fails to load: "unrecognized name 'em_contact_site' of sensorized object").
+    for sensor_parent in root.iter("sensor"):
+        for el in list(sensor_parent):
+            site = el.get("site")
+            if site in ("em_contact_site", "em_touch_site"):
+                changes.append(f"re-point sensor {el.get('name', el.tag)} site {site}->cup_contact_site")
+                if apply:
+                    el.set("site", "cup_contact_site"); dirty = True
 
     # 4. add bin to worldbody (only in the file that has the worldbody with objects)
     worldbody = root.find(".//worldbody")
